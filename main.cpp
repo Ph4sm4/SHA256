@@ -41,7 +41,11 @@ private:
     void prepareWORDChunks(WORD *chunks, const bitset<SHA256_BLOCK_SIZE> &block);
     void prepareMsgSchedule(WORD *msgSchedules, const WORD *chunks);
 
+    void computeHash(WORD *chunks, WORD *msgSchedules);
+
     WORD ROTR(WORD x, int n) const;
+    WORD CH(WORD e, WORD f, WORD g) const;
+    WORD MAJ(WORD a, WORD b, WORD c) const;
 
     string createOutputHash() const;
 
@@ -52,7 +56,7 @@ private:
     void printMessageBlock() const;
 
     // initial hash values (first 32 bits of the fractional parts of the square roots of the first 8 primes 2..19):
-    WORD hashValues[8] = {
+    WORD hVals[8] = {
         0x6a09e667,
         0xbb67ae85,
         0x3c6ef372,
@@ -62,7 +66,7 @@ private:
         0x1f83d9ab,
         0x5be0cd19};
 
-    // constans (first 32 bits of the fractional parts of the cube roots of the first 64 primes 2..311):
+    // constants (first 32 bits of the fractional parts of the cube roots of the first 64 primes 2..311):
     WORD k[64] = {
         0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
         0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
@@ -81,7 +85,9 @@ int main()
 
     SHA256 obj;
 
-    obj.hash("RedBlockBlue");
+    cout << endl
+         << obj.hash("Olaf Dalach - Ph4sm4Solutions 12.23.2024") << endl
+         << endl;
 
     return 0;
 }
@@ -91,6 +97,18 @@ string SHA256::hash(const string &msg)
     this->prepareBlocks(msg);
     this->processBlocks();
 
+    // combine the hash values into a single 256 bit bitset
+    for (int i = 0; i < 8; i++)
+    {
+        bitset<32> hWord(hVals[i]);
+        for (int j = SHA256_BIT_SIZE - 1 - i * 32; j >= SHA256_BIT_SIZE - 1 - (i + 1) * 32; j--)
+        {
+            if (j < 0)
+                break;
+            hashBits[j] = hWord[j % 32];
+        }
+    }
+
     return this->createOutputHash();
 }
 
@@ -99,9 +117,6 @@ void SHA256::prepareBlocks(const string &str)
     const int charsPerBlock = 64;
     int blocksNumBeforePadding = ceil(float(str.length() * CHAR_BITS) / SHA256_BLOCK_SIZE);
     strBitSize = str.length() * CHAR_BITS;
-
-    cout
-        << "num of blocks: " << blocksNumBeforePadding << endl;
 
     for (int blockIndex = 0; blockIndex < blocksNumBeforePadding; blockIndex++)
     {
@@ -123,8 +138,6 @@ void SHA256::prepareBlocks(const string &str)
         this->blocks.push_back(block);
     }
     blockPadding(blocks.at(blocks.size() - 1)); // padd the last block (may result in creating an additional one in case of an overflow)
-
-    printMessageBlock();
 }
 
 void SHA256::blockPadding(bitset<SHA256_BLOCK_SIZE> &block)
@@ -133,7 +146,6 @@ void SHA256::blockPadding(bitset<SHA256_BLOCK_SIZE> &block)
     int properMessageBlockSize = ceil(float(strBitSize + 1 + 64) / 512.f) * SHA256_BLOCK_SIZE;
     // calculate the number of additional 0's required between the actual message bits and the length bits
     int k = properMessageBlockSize - strBitSize - 1 - 64;
-    cout << "obtained: " << k << " " << properMessageBlockSize << endl;
 
     block[SHA256_BLOCK_SIZE - ((strBitSize + 1) % SHA256_BLOCK_SIZE)] = 1; // add a '1' bit
 
@@ -178,6 +190,8 @@ void SHA256::processBlock(const bitset<SHA256_BLOCK_SIZE> &block)
         msgSchedules[i] = 0;
 
     this->prepareMsgSchedule(msgSchedules, chunks);
+
+    this->computeHash(chunks, msgSchedules);
 }
 
 void SHA256::prepareWORDChunks(WORD *chunks, const bitset<SHA256_BLOCK_SIZE> &block)
@@ -193,12 +207,6 @@ void SHA256::prepareWORDChunks(WORD *chunks, const bitset<SHA256_BLOCK_SIZE> &bl
         if (i % 32 == 0)
             ind++;
     }
-    cout << endl;
-    for (int i = 0; i < 16; i++)
-    {
-        cout << bitset<32>(chunks[i]) << endl;
-    }
-    cout << endl;
 }
 
 void SHA256::prepareMsgSchedule(WORD *msgSchedules, const WORD *chunks)
@@ -236,14 +244,58 @@ void SHA256::prepareMsgSchedule(WORD *msgSchedules, const WORD *chunks)
         WORD sigma1 = ROTR(x2, 17) ^ ROTR(x2, 19) ^ (x2 >> 10);
 
         msgSchedules[i] = sigma1 + x7 + sigma0 + x16;
-
-        cout << "W" << i << ": " << bitset<32>(msgSchedules[i]) << endl;
     }
+}
+
+void SHA256::computeHash(WORD *chunks, WORD *msgSchedules)
+{
+    int a = hVals[0], b = hVals[1], c = hVals[2], d = hVals[3],
+        e = hVals[4], f = hVals[5], g = hVals[6], h = hVals[7];
+
+    for (int i = 0; i < 64; i++)
+    {
+        WORD epsilon0 = ROTR(a, 2) ^ ROTR(a, 13) ^ ROTR(a, 22);
+        WORD epsilon1 = ROTR(e, 6) ^ ROTR(e, 11) ^ ROTR(e, 25);
+
+        WORD T1 = h + epsilon1 + CH(e, f, g) + k[i] + msgSchedules[i];
+        WORD T2 = epsilon0 + MAJ(a, b, c);
+
+        h = g;
+        g = f;
+        f = e;
+        e = d + T1;
+        d = c;
+        c = b;
+        b = a;
+        a = T1 + T2;
+    }
+
+    hVals[0] += a;
+    hVals[1] += b;
+    hVals[2] += c;
+    hVals[3] += d;
+    hVals[4] += e;
+    hVals[5] += f;
+    hVals[6] += g;
+    hVals[7] += h;
 }
 
 WORD SHA256::ROTR(WORD x, int n) const
 {
     return (x >> n) | (x << (32 - n));
+}
+
+// CH - choose
+WORD SHA256::CH(WORD e, WORD f, WORD g) const
+{
+    // this equation can be obtained by creating a truth table
+    return ((~e) & g) ^ (e & f);
+}
+
+// MAJ - majority
+WORD SHA256::MAJ(WORD a, WORD b, WORD c) const
+{
+    return (a & b) ^ (a & c) ^ (b & c);
 }
 
 /*
@@ -254,7 +306,7 @@ string SHA256::createOutputHash() const
     std::stringstream hex_stream;
 
     // iterate every 4 bits
-    for (int i = 0; i < SHA256_BIT_SIZE; i += 4)
+    for (int i = SHA256_BIT_SIZE - 1; i >= 0; i -= 4)
     {
         // 4 bit number (0 - 15), if the i, ..., i+3 bits are 1101, then each expression is gonna generate a number with only one bit switched on or off, based on whats in hashBits
         // and then all bits from those 4 numbers are gonna get put in a column, and we gonna perform an OR operation on every column of bits
@@ -266,7 +318,7 @@ string SHA256::createOutputHash() const
         resulting in 1101 (dec. 13)
 
         */
-        unsigned int hexValue = (hashBits[i] << 3) | (hashBits[i + 1] << 2) | (hashBits[i + 2] << 1) | (hashBits[i + 3]);
+        unsigned int hexValue = (hashBits[i] << 3) | (hashBits[i - 1] << 2) | (hashBits[i - 2] << 1) | (hashBits[i - 3]);
 
         hex_stream << hex << hexValue;
     }

@@ -36,7 +36,12 @@ private:
     void prepareBlocks(const string &str);
     void blockPadding(bitset<SHA256_BLOCK_SIZE> &block);
     void processBlocks();
-    void processBlock(bitset<SHA256_BLOCK_SIZE> &block);
+    void processBlock(const bitset<SHA256_BLOCK_SIZE> &block);
+
+    void prepareWORDChunks(WORD *chunks, const bitset<SHA256_BLOCK_SIZE> &block);
+    void prepareMsgSchedule(WORD *msgSchedules, const WORD *chunks);
+
+    WORD ROTR(WORD x, int n) const;
 
     string createOutputHash() const;
 
@@ -46,7 +51,28 @@ private:
 
     void printMessageBlock() const;
 
-    int blocksNumBeforePadding;
+    // initial hash values (first 32 bits of the fractional parts of the square roots of the first 8 primes 2..19):
+    WORD hashValues[8] = {
+        0x6a09e667,
+        0xbb67ae85,
+        0x3c6ef372,
+        0xa54ff53a,
+        0x510e527f,
+        0x9b05688c,
+        0x1f83d9ab,
+        0x5be0cd19};
+
+    // constans (first 32 bits of the fractional parts of the cube roots of the first 64 primes 2..311):
+    WORD k[64] = {
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2};
+
     int strBitSize;
 };
 
@@ -71,7 +97,7 @@ string SHA256::hash(const string &msg)
 void SHA256::prepareBlocks(const string &str)
 {
     const int charsPerBlock = 64;
-    blocksNumBeforePadding = ceil(float(str.length() * CHAR_BITS) / SHA256_BLOCK_SIZE);
+    int blocksNumBeforePadding = ceil(float(str.length() * CHAR_BITS) / SHA256_BLOCK_SIZE);
     strBitSize = str.length() * CHAR_BITS;
 
     cout
@@ -138,13 +164,24 @@ void SHA256::processBlocks()
     }
 }
 
-void SHA256::processBlock(bitset<SHA256_BLOCK_SIZE> &block)
+void SHA256::processBlock(const bitset<SHA256_BLOCK_SIZE> &block)
 {
     WORD chunks[16];
     // initially chunks are 0
     for (int i = 0; i < 16; i++)
         chunks[i] = 0;
 
+    this->prepareWORDChunks(chunks, block);
+
+    WORD msgSchedules[64];
+    for (int i = 0; i < 16; i++)
+        msgSchedules[i] = 0;
+
+    this->prepareMsgSchedule(msgSchedules, chunks);
+}
+
+void SHA256::prepareWORDChunks(WORD *chunks, const bitset<SHA256_BLOCK_SIZE> &block)
+{
     int ind = 0;
     for (int i = SHA256_BLOCK_SIZE - 1; i >= 0; i--)
     {
@@ -162,6 +199,51 @@ void SHA256::processBlock(bitset<SHA256_BLOCK_SIZE> &block)
         cout << bitset<32>(chunks[i]) << endl;
     }
     cout << endl;
+}
+
+void SHA256::prepareMsgSchedule(WORD *msgSchedules, const WORD *chunks)
+{
+    // addition is performed using MOD 2^32
+
+    // first 16 W (W0, W1, ..., W15) are just equal to our computed chunks
+    for (int i = 0; i < 16; i++)
+    {
+        msgSchedules[i] = chunks[i];
+    }
+
+    /* the rest of the schedules W (W16, W17, ..., W63) are computed using this formula:
+        sigma1(Wt-2) + Wt-7 + sigma0(Wt-15) + Wt-16
+
+        where:
+
+        sigma0(x) = ROTR7(x) | ROTR18(x) | SHR3(x)
+        sigma1(x) = ROTR17(x) | ROTR19(x) | SHR10(x)
+
+        ROTR[IND] (rotate right) means that we take the 32 bit WORD and shift every single bit IND times to the right
+        while also looping the IND most right bits around to the start
+
+        SHR[IND] is just shift right: x >> IND
+    */
+
+    for (int i = 16; i < 64; i++)
+    {
+        WORD x2 = msgSchedules[i - 2];
+        WORD x7 = msgSchedules[i - 7];
+        WORD x15 = msgSchedules[i - 15];
+        WORD x16 = msgSchedules[i - 16];
+
+        WORD sigma0 = ROTR(x15, 7) ^ ROTR(x15, 18) ^ (x15 >> 3);
+        WORD sigma1 = ROTR(x2, 17) ^ ROTR(x2, 19) ^ (x2 >> 10);
+
+        msgSchedules[i] = sigma1 + x7 + sigma0 + x16;
+
+        cout << "W" << i << ": " << bitset<32>(msgSchedules[i]) << endl;
+    }
+}
+
+WORD SHA256::ROTR(WORD x, int n) const
+{
+    return (x >> n) | (x << (32 - n));
 }
 
 /*

@@ -3,7 +3,6 @@
 #include <sstream>
 #include <vector>
 #include <math.h>
-#include "sha256.h"
 #define SHA256_BIT_SIZE 256
 #define SHA256_BLOCK_SIZE 512
 #define BYTE 8
@@ -11,21 +10,6 @@
 #define WORD uint32_t
 
 using namespace std;
-
-/*
-    PREPROCESSING
-
-    1. for each character of the input string convert it to the binary (every char is 8 bits long / 1 byte )
-        lets say our input string has 5 chars: 5 x 8 bits = 40 bits in total for our string
-
-    2. we need to padd the message so that the number of bits is a multiple of 512 (it can also be 1024, depends on the implementation)
-        to do that we append the bit "1" to the end of the message, followed by k (k > 0) is the smallest solution to the equation:
-        l + 1 + k = 448 mod 512 -> k = 448 - , where l = 40 in our case
-
-        then append the 64 bit block that is equal to the number l (40) expressed in binary, so a lot of 0000000...101000
-
-
-*/
 
 class SHA256
 {

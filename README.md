@@ -59,4 +59,4 @@ private:
 };
 ```
 
-which does exactly what you would expect - hashes the provided string with SHA256 algorithm
+which does exactly what you would expect - hashes the provided string with SHA256 algorithm.

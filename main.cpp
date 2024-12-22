@@ -8,6 +8,7 @@
 #define SHA256_BLOCK_SIZE 512
 #define BYTE 8
 #define CHAR_BITS sizeof(char) * BYTE
+#define WORD uint32_t
 
 using namespace std;
 
@@ -32,8 +33,10 @@ public:
     string hash(const string &msg);
 
 private:
-    string prepareBlocks(const string &str);
+    void prepareBlocks(const string &str);
     void blockPadding(bitset<SHA256_BLOCK_SIZE> &block);
+    void processBlocks();
+    void processBlock(bitset<SHA256_BLOCK_SIZE> &block);
 
     string createOutputHash() const;
 
@@ -52,7 +55,7 @@ int main()
 
     SHA256 obj;
 
-    obj.hash("sdasdasdasdasdasdasdasdasdasdsdsdsadasdddasdasdasdsdsaaaasdasdasdasdsadsadsadasds");
+    obj.hash("RedBlockBlue");
 
     return 0;
 }
@@ -60,11 +63,12 @@ int main()
 string SHA256::hash(const string &msg)
 {
     this->prepareBlocks(msg);
+    this->processBlocks();
 
     return this->createOutputHash();
 }
 
-string SHA256::prepareBlocks(const string &str)
+void SHA256::prepareBlocks(const string &str)
 {
     const int charsPerBlock = 64;
     blocksNumBeforePadding = ceil(float(str.length() * CHAR_BITS) / SHA256_BLOCK_SIZE);
@@ -95,14 +99,13 @@ string SHA256::prepareBlocks(const string &str)
     blockPadding(blocks.at(blocks.size() - 1)); // padd the last block (may result in creating an additional one in case of an overflow)
 
     printMessageBlock();
-
-    return string();
 }
 
 void SHA256::blockPadding(bitset<SHA256_BLOCK_SIZE> &block)
 {
-    // we go from the back - least significant bit | l + 1 + k = 448 mod 512
+    // we round up to the nearest multiple of 512
     int properMessageBlockSize = ceil(float(strBitSize + 1 + 64) / 512.f) * SHA256_BLOCK_SIZE;
+    // calculate the number of additional 0's required between the actual message bits and the length bits
     int k = properMessageBlockSize - strBitSize - 1 - 64;
     cout << "obtained: " << k << " " << properMessageBlockSize << endl;
 
@@ -125,6 +128,40 @@ void SHA256::blockPadding(bitset<SHA256_BLOCK_SIZE> &block)
     }
     if (k > 447)
         this->blocks.push_back(additionalBlock);
+}
+
+void SHA256::processBlocks()
+{
+    for (bitset<SHA256_BLOCK_SIZE> block : this->blocks)
+    {
+        this->processBlock(block);
+    }
+}
+
+void SHA256::processBlock(bitset<SHA256_BLOCK_SIZE> &block)
+{
+    WORD chunks[16];
+    // initially chunks are 0
+    for (int i = 0; i < 16; i++)
+        chunks[i] = 0;
+
+    int ind = 0;
+    for (int i = SHA256_BLOCK_SIZE - 1; i >= 0; i--)
+    {
+        // here we copy bit by bit the values from the block into our 32-bit chunks
+        // by OR'ing the current WORD value with block's bit shifted proper number of times to the left
+        // at first iter it would look like 1 (31 zeros), then 1 (30 zeros) etc.
+        chunks[ind] = chunks[ind] | block[i] << i % 32;
+        // switch to the next WORD
+        if (i % 32 == 0)
+            ind++;
+    }
+    cout << endl;
+    for (int i = 0; i < 16; i++)
+    {
+        cout << bitset<32>(chunks[i]) << endl;
+    }
+    cout << endl;
 }
 
 /*
@@ -157,7 +194,7 @@ string SHA256::createOutputHash() const
 
 void SHA256::printMessageBlock() const
 {
-    for (auto block : blocks)
+    for (bitset<SHA256_BLOCK_SIZE> block : this->blocks)
     {
         int ct = 0;
         int colCt = 0;

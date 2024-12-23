@@ -60,3 +60,16 @@ private:
 ```
 
 which does exactly what you would expect - hashes the provided string with SHA256 algorithm.
+
+### Example outputs
+
+```
+input string: abc
+SHA256: ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad
+
+input string: I'm now testing a very long message let's
+SHA256: 2f921112bc28beacbfb1a9e7bd031e3da912fd13568c46031efc9059bce6d4e4
+
+input string: Olaf Dalach - Ph4sm4Solutions 12.23.2024
+SHA256: a3b391c60e2f72afbaa7a6ecba464f2b2ce756d52dfd4b43ad7c7664c21713bb
+```
